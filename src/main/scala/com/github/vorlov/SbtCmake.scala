@@ -1,4 +1,4 @@
-package com.github.sbt
+package com.github.vorlov
 
 import sbt.KeyRanks._
 import sbt.Keys._
