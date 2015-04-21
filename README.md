@@ -15,3 +15,9 @@ addSbtPlugin("com.github.vorlov" % "sbt-cmake" % "0.1.0")
 
 On compile, the *sbt-cmake::compile* task will be run. It will run _cmake_ followed by _make_. Compiled native binaries 
 and libraries will end up in _target_. To install those run *sbt-cmake::install* task.
+
+To override *cmakeSource* use following syntax
+
+```scala
+cmakeSource in Compile := (sourceDirectory in Compile).value / "cpp"
+```

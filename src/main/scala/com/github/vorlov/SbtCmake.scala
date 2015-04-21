@@ -19,9 +19,9 @@ object SbtCmake extends AutoPlugin {
     lazy val cmakeCompile = TaskKey[Unit]("sbt-cmake compile", "Compile CMake project")
 
     lazy val sbtCmakeSettings: Seq[Def.Setting[_]] = Seq(
-      cmakeInstall in sbtCmake := cmakeInstallImpl((cmakeSource in sbtCmake).value, target.value, streams.value.log),
-      cmakeCompile in sbtCmake := cmakeCompileImpl((cmakeSource in sbtCmake).value, target.value, streams.value.log),
-      cmakeSource in sbtCmake := (sourceDirectory in Compile).value / "native",
+      cmakeInstall in sbtCmake := cmakeInstallImpl(cmakeSource.value, target.value, streams.value.log),
+      cmakeCompile in sbtCmake := cmakeCompileImpl(cmakeSource.value, target.value, streams.value.log),
+      cmakeSource := (sourceDirectory in Compile).value / "native",
       compile <<= compile in Compile dependsOn (cmakeCompile in sbtCmake),
       initialize <<= (target) { target =>
         System.setProperty("java.library.path", target.getAbsolutePath)
