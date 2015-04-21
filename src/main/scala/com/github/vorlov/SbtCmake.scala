@@ -10,44 +10,51 @@ object SbtCmake extends AutoPlugin {
 
   object autoImport {
 
-    val cmakeConfigurationFile = SettingKey[File]("cmake-configuration-file", "Location of CMake configuration file.", ASetting)
+    val sbtCmake = TaskKey[String]("sbt-cmake", "sbt-cmake is an interface for the sbt-cmake package service")
 
-    lazy val cmakeCompile = TaskKey[Unit]("cmake-compile", "Compile CMake project")
+    val cmakeSource = SettingKey[File]("cmake-configuration-file", "Location of CMake configuration file.", ASetting)
 
-    lazy val cmakeInstall = TaskKey[Unit]("cmake-install","Compile CMake project")
+    lazy val cmakeInstall = TaskKey[Unit]("install", "Compile CMake project")
 
-    lazy val baseObfuscateSettings: Seq[Def.Setting[_]] = Seq(
-      cmakeCompile := cmakeCompileImpl(cmakeConfigurationFile.value, target.value, new BufferedStringLogger(streams.value.log.asInstanceOf[AbstractLogger])),
-      cmakeInstall := cmakeInstallImpl(cmakeConfigurationFile.value, target.value, new BufferedStringLogger(streams.value.log.asInstanceOf[AbstractLogger])),
-      cmakeConfigurationFile := (sourceDirectory in Compile).value / "cpp",
-      compile <<= compile in Compile dependsOn cmakeCompile,
-      initialize ~= { _ =>
-        System.setProperty("java.library.path", "target/")
+    lazy val cmakeCompile = TaskKey[Unit]("sbt-cmake compile", "Compile CMake project")
+
+    lazy val sbtCmakeSettings: Seq[Def.Setting[_]] = Seq(
+      cmakeInstall in sbtCmake := cmakeInstallImpl((cmakeSource in sbtCmake).value, target.value, streams.value.log),
+      cmakeCompile in sbtCmake := cmakeCompileImpl((cmakeSource in sbtCmake).value, target.value, streams.value.log),
+      cmakeSource in sbtCmake := (sourceDirectory in Compile).value / "native",
+      compile <<= compile in Compile dependsOn (cmakeCompile in sbtCmake),
+      initialize <<= (target) { target =>
+        System.setProperty("java.library.path", target.getAbsolutePath)
       }
     )
 
   }
 
-  def cmakeCompileImpl(source: File, buildFolder: File, log: BufferedStringLogger) = execute(Seq("make"), source, buildFolder, log)
+  def cmakeCompileImpl(source: File, buildFolder: File, log: Logger) = execute(Seq("make"), source, buildFolder, log)
 
-  def cmakeInstallImpl(source: File, buildFolder: File, log: BufferedStringLogger) = execute(Seq("make", "install"), source, buildFolder, log)
+  def cmakeInstallImpl(source: File, buildFolder: File, log: Logger) = execute(Seq("make", "install"), source, buildFolder, log)
 
-  def execute(cmd: Seq[String], source: File, buildFolder: File, log: BufferedStringLogger ): Unit = {
+  def execute(cmd: Seq[String], source: File, buildFolder: File, log: Logger ): Unit = {
+
+    val bufferedLogger = new BufferedLogger(log.asInstanceOf[AbstractLogger])
 
     val cmakeCmd = findCMake.getOrElse{
       throw new Exception("Please install CMake or add it to the PATH.")
     }
 
-    println(cmakeCmd)
+    val exitCode = sbt.Process(cmakeCmd.getAbsolutePath :: source.getAbsolutePath :: Nil, buildFolder) #&& sbt.Process(cmd, buildFolder) ! bufferedLogger
 
-    val exitCode = sbt.Process(cmakeCmd.getAbsolutePath :: source.getAbsolutePath :: Nil, buildFolder) #&& sbt.Process(cmd, buildFolder) ! log
-
-    if( 0 != exitCode) throw new Exception(log.lastMessage)
+    exitCode match {
+      case 0 => bufferedLogger.playAsSuccess
+      case errorCode => {
+        bufferedLogger.playAsFailure
+        throw new Exception(s"Could not execute [${cmd.mkString(" ")}], error code is [$errorCode]")
+      }
+    }
 
   }
 
   def findCMake: Option[File] = {
-    println(Option("which cmake" !!).map(s => s.replaceAll("[^\\w/\\\\\\t _\\-]", "")).map(s => s.replaceAll("\n", "")))
     Option("which cmake" !!).map(s => s.replaceAll("[^\\w/\\\\\\t _\\-]", "")).map(s => s.replaceAll("\n", "")).map( path => new File(path)).filter(_.exists)
   }
 
@@ -57,19 +64,30 @@ object SbtCmake extends AutoPlugin {
   override def trigger = allRequirements
 
   override val projectSettings =
-      inConfig(Compile)(baseObfuscateSettings)
+      inConfig(Compile)(sbtCmakeSettings)
 
 }
 
-class BufferedStringLogger(logger: AbstractLogger) extends BufferedLogger(logger) {
+class BufferedLogger(logger: AbstractLogger) extends BasicLogger {
 
-  private[this] var lastBufferedMessage: Option[String] = None
+  private[this] val buffer = new ListBuffer[String]
 
   override def log(level: Level.Value, message: => String): Unit = {
-    lastBufferedMessage = Some(message)
-    super.log(level, message)
+    buffer += message
   }
 
-  def lastMessage = lastBufferedMessage.getOrElse("")
+  override def control(event: ControlEvent.Value, message: => String): Unit = logger.control(event, message)
+
+  override def logAll(events: Seq[LogEvent]): Unit = logger.logAll(events)
+
+  override def success(message: => String): Unit = logger.success(message)
+
+  override def trace(t: => Throwable): Unit = logger.trace(t)
+
+  def playAsSuccess = play(Level.Info)
+
+  def playAsFailure = play(Level.Error)
+
+  private def play(level: Level.Value) = logAll(buffer.map(new Log(level, _)))
 
 }

@@ -14,7 +14,7 @@ bintraySettings
 
 bintrayPublishSettings
 
-bintrayOrganization in bintray := Some("volodymyr")
+bintrayOrganization in bintray := Some("vorlov")
 
 repository in  bintray := "sbt-plugins"
 
